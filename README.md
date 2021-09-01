@@ -1,4 +1,4 @@
-# mobile_template
+# Blin Metaverse
 
 ## Project setup
 ```
