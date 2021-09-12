@@ -54,10 +54,15 @@ contract LpStaking is Ownable {
         uint256[] memory totalRates,
         uint256[11] memory points
     ) {
+        require(blin_ != address(0), "blin_ cannot be zero address");
+        require(scStaking_ != address(0), "scStaking_ cannot be zero address");
+
         _points = points;
 
         _blin = blin_;
         _scStaking = scStaking_;
+
+        uint256 sumOfTotalRate = 0;
 
         for (uint256 i = 0; i < indexes.length; i++) {
             uint256 index = indexes[i];
@@ -67,14 +72,18 @@ contract LpStaking is Ownable {
             pool.name = names[i];
             pool.addr = addresses[i];
             pool.totalRate = totalRates[i];
+
+            sumOfTotalRate += totalRates[i];
         }
+
+        require(sumOfTotalRate == 100 && sumOfTotalRate7ths == 100);
     }
 
     function syncStarted() public onlyOwner {
         require(_started == 0, "already started");
 
-        (uint256 startBlock, uint256 timestamp) =
-            IScStaking(_scStaking).normal();
+        (uint256 startBlock, uint256 timestamp) = IScStaking(_scStaking)
+            .normal();
         require(startBlock > 0, "unable to sync");
 
         _started = startBlock;
@@ -109,9 +118,11 @@ contract LpStaking is Ownable {
     }
 
     function setPoolRates(uint256[] memory indexes, uint256[] memory totalRate)
-        public
+        external
         onlyOwner
     {
+        require(indexes.length == totalRate.length);
+
         for (uint256 i = 0; i < indexes.length; i++) {
             Pool storage pool = _pools[indexes[i]];
             if (pool.totalRate == totalRate[i]) {
@@ -124,7 +135,7 @@ contract LpStaking is Ownable {
         }
     }
 
-    function setProfits(uint256[11] memory profits_) public onlyOwner {
+    function setProfits(uint256[11] memory profits_) external onlyOwner {
         for (uint256 i = 0; i < _poolIndexes.length; i++) {
             uint256 index = _poolIndexes[i];
             if (index == 0) {
@@ -177,7 +188,10 @@ contract LpStaking is Ownable {
         Pool storage pool = _pools[index];
         require(bytes(pool.name).length > 0, "pool not exists");
 
-        IERC20(pool.addr).transferFrom(msg.sender, address(this), value);
+        require(
+            IERC20(pool.addr).transferFrom(msg.sender, address(this), value),
+            "fails to transfer token"
+        );
 
         uint256 accUP = _nowAccUP(pool);
         User storage user = _users[index][msg.sender];
@@ -246,8 +260,9 @@ contract LpStaking is Ownable {
         User storage user = _users[index][msg.sender];
         Pool storage pool = _pools[index];
         uint256 accUP = _nowAccUP(pool);
-        uint256 amount =
-            (user.stakes * (accUP - user.accUP)) / 10**24 + user.cache;
+        uint256 amount = (user.stakes * (accUP - user.accUP)) /
+            10**24 +
+            user.cache;
         require(amount > 0, "no reward");
 
         user.got += amount;
@@ -269,8 +284,9 @@ contract LpStaking is Ownable {
         if (!_emergency) {
             uint256 accUP = _nowAccUP(pool);
 
-            uint256 amount =
-                (user.stakes * (accUP - user.accUP)) / 10**24 + user.cache;
+            uint256 amount = (user.stakes * (accUP - user.accUP)) /
+                10**24 +
+                user.cache;
             if (amount > 0) {
                 IMinable(_blin).mint(msg.sender, amount);
             }
@@ -280,7 +296,10 @@ contract LpStaking is Ownable {
 
         pool.totalStakes -= user.stakes;
 
-        IERC20(pool.addr).transfer(msg.sender, user.stakes);
+        require(
+            IERC20(pool.addr).transfer(msg.sender, user.stakes),
+            "fails to transfer token"
+        );
 
         delete _users[index][msg.sender];
     }

@@ -64,10 +64,25 @@ contract SimpleCoinStaking is Ownable {
         uint256[] memory boxes,
         uint256[11] memory points
     ) {
+        require(blin_ != address(0), "blin_ cannot be zero address");
+        require(nft_ != address(0), "nft_ cannot be zero address");
+        require(
+            (indexes.length == names.length) &&
+                (names.length == addresses.length) &&
+                (addresses.length == totalRates.length) &&
+                (totalRates.length == totalRate7ths.length) &&
+                (totalRate7ths.length == thresholds.length) &&
+                (thresholds.length == boxes.length) &&
+                (boxes.length == points.length)
+        );
+
         _blin = blin_;
         _nft = nft_;
         _secPerDrop = secPerDrop_;
         _points = points;
+
+        uint256 sumOfTotalRate = 0;
+        uint256 sumOfTotalRate7ths = 0;
 
         for (uint256 i = 0; i < indexes.length; i++) {
             uint256 index = indexes[i];
@@ -80,19 +95,28 @@ contract SimpleCoinStaking is Ownable {
             pool.totalRate7th = totalRate7ths[i];
             pool.threshold = thresholds[i];
             pool.boxKind = boxes[i];
+
+            sumOfTotalRate += totalRates[i];
+            sumOfTotalRate7ths += totalRate7ths[i];
         }
+
+        require(sumOfTotalRate == 100 && sumOfTotalRate7ths == 100);
     }
 
     function startNormal() public onlyOwner {
         require(_normal == 0, "already in normal");
         _normal = block.number;
         _normalTimestamp = block.timestamp;
-        _block7th = _normal + 2;
-        // _block7th = _normal + 28800 * 7;
+        _block7th = _normal + 28800 * 7;
 
         for (uint256 i = 0; i < _points.length; i++) {
             _points[i] += _normal;
         }
+
+        require(
+            _block7th <= _points[0],
+            "_block7th should not greater than _points[0]"
+        );
     }
 
     function normal() public view returns (uint256, uint256) {
@@ -127,7 +151,12 @@ contract SimpleCoinStaking is Ownable {
         uint256[] memory indexes,
         uint256[] memory totalRate,
         uint256[] memory totalRate7th
-    ) public onlyOwner {
+    ) external onlyOwner {
+        require(
+            (indexes.length == totalRate.length) &&
+                (totalRate.length == totalRate7th.length)
+        );
+
         for (uint256 i = 0; i < indexes.length; i++) {
             Pool storage pool = _pools[indexes[i]];
             if (
@@ -144,7 +173,7 @@ contract SimpleCoinStaking is Ownable {
         }
     }
 
-    function setProfits(uint256[11] memory profits_) public onlyOwner {
+    function setProfits(uint256[11] memory profits_) external onlyOwner {
         for (uint256 i = 0; i < _poolIndexes.length; i++) {
             uint256 index = _poolIndexes[i];
             if (index == 0) {
@@ -197,7 +226,14 @@ contract SimpleCoinStaking is Ownable {
         if (pool.addr == address(0)) {
             value = msg.value;
         } else {
-            IERC20(pool.addr).transferFrom(msg.sender, address(this), value);
+            require(
+                IERC20(pool.addr).transferFrom(
+                    msg.sender,
+                    address(this),
+                    value
+                ),
+                "fails to transfer token"
+            );
         }
 
         require(value > 0, "requires value > 0");
@@ -254,11 +290,10 @@ contract SimpleCoinStaking is Ownable {
         Pool storage pool = _pools[index];
         require(pool.boxKind > 0, "no box associated");
 
-        uint256 boxes =
-            user.started == 0
-                ? 0
-                : ((_normal == 0 ? block.timestamp : _normalTimestamp) -
-                    user.started) / _secPerDrop;
+        uint256 boxes = user.started == 0
+            ? 0
+            : ((_normal == 0 ? block.timestamp : _normalTimestamp) -
+                user.started) / _secPerDrop;
         require(n > 0 && n <= boxes, "param invalid");
 
         user.started += n * _secPerDrop;
@@ -322,8 +357,9 @@ contract SimpleCoinStaking is Ownable {
         User storage user = _users[index][msg.sender];
         Pool storage pool = _pools[index];
         uint256 accUP = _nowAccUP(pool);
-        uint256 amount =
-            (user.stakes * (accUP - user.accUP)) / 10**24 + user.cache;
+        uint256 amount = (user.stakes * (accUP - user.accUP)) /
+            10**24 +
+            user.cache;
         require(amount > 0, "no reward");
 
         user.got += amount;
@@ -345,8 +381,9 @@ contract SimpleCoinStaking is Ownable {
         if (!_emergency) {
             uint256 accUP = _nowAccUP(pool);
 
-            uint256 amount =
-                (user.stakes * (accUP - user.accUP)) / 10**24 + user.cache;
+            uint256 amount = (user.stakes * (accUP - user.accUP)) /
+                10**24 +
+                user.cache;
             if (amount > 0) {
                 IMinable(_blin).mint(msg.sender, amount);
             }
@@ -355,14 +392,17 @@ contract SimpleCoinStaking is Ownable {
         }
 
         pool.totalStakes -= user.stakes;
+        uint256 userStakes = user.stakes;
+        delete _users[index][msg.sender];
 
         if (pool.addr == address(0)) {
-            payable(msg.sender).transfer(user.stakes);
+            payable(msg.sender).transfer(userStakes);
         } else {
-            IERC20(pool.addr).transfer(msg.sender, user.stakes);
+            require(
+                IERC20(pool.addr).transfer(msg.sender, userStakes),
+                "fails to transfer token"
+            );
         }
-
-        delete _users[index][msg.sender];
     }
 
     function setBlin(address blin_) public onlyOwner {

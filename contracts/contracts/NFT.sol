@@ -38,12 +38,18 @@ contract NFT is ERC721, ERC721Burnable, Ownable {
         uint256[] memory limits,
         uint256[] memory prices
     ) ERC721("Metaverse NFT", "NFT") {
+        require(blin_ != address(0), "blin_ cannot be zero address");
+        require(swap_ != address(0), "swap_ cannot be zero address");
+        require(recipient_ != address(0), "recipient_ cannot be zero address");
+
         _blin = blin_;
         _swap = swap_;
         _recipient = recipient_;
         _globalNext = globalNext_;
 
         for (uint256 i = 0; i < ids.length; i++) {
+            require(prices[i] > 0, "price must larger than 0");
+            
             Kind storage kind = _kinds[ids[i]];
             kind.next = from[i];
             kind.limit = limits[i];
@@ -88,6 +94,7 @@ contract NFT is ERC721, ERC721Burnable, Ownable {
     }
 
     function setBlin(address blin_) public onlyOwner {
+        require(blin_ != address(0), "blin_ cannot be zero address");
         _blin = blin_;
     }
 
@@ -96,6 +103,7 @@ contract NFT is ERC721, ERC721Burnable, Ownable {
     }
 
     function setSwap(address swap_) public onlyOwner {
+        require(swap_ != address(0), "swap_ cannot be zero address");
         _swap = swap_;
     }
 
@@ -253,9 +261,14 @@ contract NFT is ERC721, ERC721Burnable, Ownable {
         address[] memory path = new address[](2);
         path[0] = ISwapRouter(_swap).WETH();
         path[1] = _blin;
-        uint256[] memory amounts =
-            ISwapRouter(_swap).getAmountsOut(expect, path);
-        IERC20(_blin).transferFrom(msg.sender, _recipient, amounts[1]);
+        uint256[] memory amounts = ISwapRouter(_swap).getAmountsOut(
+            expect,
+            path
+        );
+        require(
+            IERC20(_blin).transferFrom(msg.sender, _recipient, amounts[1]),
+            "fails to transfer token"
+        );
 
         require(
             _isApprovedOrOwner(msg.sender, id),
