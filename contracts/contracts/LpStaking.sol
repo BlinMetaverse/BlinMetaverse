@@ -76,7 +76,7 @@ contract LpStaking is Ownable {
             sumOfTotalRate += totalRates[i];
         }
 
-        require(sumOfTotalRate == 100 && sumOfTotalRate7ths == 100);
+        require(sumOfTotalRate == 100);
     }
 
     function syncStarted() public onlyOwner {
@@ -280,28 +280,28 @@ contract LpStaking is Ownable {
         require(user.stakes > 0, "no stake");
 
         Pool storage pool = _pools[index];
+        uint256 profit;
 
         if (!_emergency) {
             uint256 accUP = _nowAccUP(pool);
 
-            uint256 amount = (user.stakes * (accUP - user.accUP)) /
-                10**24 +
-                user.cache;
-            if (amount > 0) {
-                IMinable(_blin).mint(msg.sender, amount);
-            }
+            profit = (user.stakes * (accUP - user.accUP)) / 10**24 + user.cache;
             pool.accUP = accUP;
             pool.last = block.number;
         }
 
         pool.totalStakes -= user.stakes;
+        uint256 userStakes = user.stakes;
+        delete _users[index][msg.sender];
+
+        if (profit > 0) {
+            IMinable(_blin).mint(msg.sender, profit);
+        }
 
         require(
-            IERC20(pool.addr).transfer(msg.sender, user.stakes),
+            IERC20(pool.addr).transfer(msg.sender, userStakes),
             "fails to transfer token"
         );
-
-        delete _users[index][msg.sender];
     }
 
     function setBlin(address blin_) public onlyOwner {
